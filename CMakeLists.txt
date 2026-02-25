@@ -1,3 +1,5 @@
 set(COMPONENT_SRCDIRS "src/aes src/hal src/lmic")
-set(COMPONENT_ADD_INCLUDEDIRS "include")
+set(COMPONENT_ADD_INCLUDEDIRS "include" "src")
+set(COMPONENT_REQUIRES esp_driver_gpio esp_driver_spi esp_timer)
 register_component()
+component_compile_options(-Wno-error=format)

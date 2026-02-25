@@ -43,7 +43,6 @@
 
 // Special APIs - for development or testing
 #define isTESTMODE() 0
-
 DEFINE_LMIC;
 
 
@@ -902,10 +901,37 @@ static ostime_t nextJoinState (void) {
     //
     u1_t failed = 0;
     if( LMIC.datarate != DR_SF8C ) {
-        LMIC.txChnl = 64+(LMIC.txChnl&7);
+        // Use only enabled 500kHz channels (64..71), so app-level subband
+        // masking is honored during join/rejoin.
+        u1_t map500 = LMIC.channelMap[64/16] & 0xFF;
+        bit_t picked = 0;
+        for( u1_t i=0; i<8; i++ ) {
+            u1_t idx = (LMIC.txChnl + i) & 0x7;
+            if( (map500 & (1 << idx)) != 0 ) {
+                LMIC.txChnl = 64 + idx;
+                picked = 1;
+                break;
+            }
+        }
+        if( !picked ) {
+            LMIC.txChnl = 64 + (LMIC.txChnl & 7);
+        }
         setDrJoin(DRCHG_SET, DR_SF8C);
     } else {
-        LMIC.txChnl = os_getRndU1() & 0x3F;
+        // Use only enabled 125kHz channels (0..63), so app-level subband
+        // masking is honored during join/rejoin.
+        bit_t picked = 0;
+        for( u1_t i=0; i<64; i++ ) {
+            u1_t ch = (u1_t)((os_getRndU1() + i) & 0x3F);
+            if( (LMIC.channelMap[ch >> 4] & (1 << (ch & 0xF))) != 0 ) {
+                LMIC.txChnl = ch;
+                picked = 1;
+                break;
+            }
+        }
+        if( !picked ) {
+            LMIC.txChnl = os_getRndU1() & 0x3F;
+        }
         s1_t dr = DR_SF7 - ++LMIC.txCnt;
         if( dr < DR_SF10 ) {
             dr = DR_SF10;
@@ -1492,8 +1518,10 @@ static bit_t processJoinAccept (void) {
 #endif
     if( dlen > LEN_JA ) {
 #if defined(CFG_us915)
-        goto badframe;
+        // Accept extended JoinAccept and ignore CFList on US915.
+        dlen = LEN_JA;
 #endif
+#if !defined(CFG_us915)
         dlen = OFF_CFLIST;
         for( u1_t chidx=3; chidx<8; chidx++, dlen+=3 ) {
             u4_t freq = convFreq(&LMIC.frame[dlen]);
@@ -1504,6 +1532,7 @@ static bit_t processJoinAccept (void) {
 #endif
             }
         }
+#endif
     }
 
     // already incremented when JOIN REQ got sent off

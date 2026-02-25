@@ -16,10 +16,16 @@
 #include "freertos/task.h"
 #include "driver/gpio.h"
 #include "driver/spi_master.h"
-#include "driver/timer.h"
 #include "esp_log.h"
+#include "esp_timer.h"
 
 #define TAG "lmic"
+
+#ifndef LMIC_SPI
+// Fallback if config.h did not set LMIC_SPI:
+// ESP-IDF 6.x uses SPI2_HOST (IDF 5.x commonly used HSPI_HOST aliases).
+#define LMIC_SPI SPI2_HOST
+#endif
 
 // Declared here, to be defined an initialized by the application
 extern const lmic_pinmap lmic_pins;
@@ -32,11 +38,11 @@ static void hal_io_init () {
     ESP_LOGI(TAG, "Starting IO initialization");
 
     gpio_config_t io_conf;
-    io_conf.intr_type = GPIO_PIN_INTR_DISABLE;
+    io_conf.intr_type = GPIO_INTR_DISABLE;
     io_conf.mode = GPIO_MODE_OUTPUT;
-    io_conf.pin_bit_mask = 1<<lmic_pins.nss;
+    io_conf.pin_bit_mask = 1ULL << lmic_pins.nss;
     if(lmic_pins.rst != LMIC_UNUSED_PIN) {
-        io_conf.pin_bit_mask |= 1<<lmic_pins.rst;
+        io_conf.pin_bit_mask |= 1ULL << lmic_pins.rst;
     }
     io_conf.pull_down_en = 0;
     io_conf.pull_up_en = 0;
@@ -68,8 +74,8 @@ void hal_pin_nss (u1_t val) {
 // set radio RST pin to given value (or keep floating!)
 void hal_pin_rst (u1_t val) {
     gpio_config_t io_conf;
-    io_conf.intr_type = GPIO_PIN_INTR_DISABLE;
-    io_conf.pin_bit_mask = (1<<lmic_pins.rst);
+    io_conf.intr_type = GPIO_INTR_DISABLE;
+    io_conf.pin_bit_mask = 1ULL << lmic_pins.rst;
     io_conf.pull_down_en = 0;
     io_conf.pull_up_en = 0;
 
@@ -79,6 +85,7 @@ void hal_pin_rst (u1_t val) {
     if(val == 0 || val == 1) { // drive pin
         io_conf.mode = GPIO_MODE_OUTPUT;
         gpio_config(&io_conf);
+        gpio_set_level(lmic_pins.rst, val);
     } else { // keep pin floating
         io_conf.mode = GPIO_MODE_INPUT;
         gpio_config(&io_conf);
@@ -155,32 +162,12 @@ u1_t hal_spi (u1_t data) {
 // TIME
 
 static void hal_time_init () {
-  ESP_LOGI(TAG, "Starting initialisation of timer");
-  int timer_group = TIMER_GROUP_0;
-  int timer_idx = TIMER_1;
-  timer_config_t config;
-  config.alarm_en = 0;
-  config.auto_reload = 0;
-  config.counter_dir = TIMER_COUNT_UP;
-  config.divider = 1600;
-  config.intr_type = 0;
-  config.counter_en = TIMER_PAUSE;
-  /*Configure timer*/
-  timer_init(timer_group, timer_idx, &config);
-  /*Stop timer counter*/
-  timer_pause(timer_group, timer_idx);
-  /*Load counter value */
-  timer_set_counter_value(timer_group, timer_idx, 0x0);
-  /*Start timer counter*/
-  timer_start(timer_group, timer_idx);
-
-  ESP_LOGI(TAG, "Finished initalisation of timer");
+  ESP_LOGI(TAG, "Using esp_timer time source");
 }
 
 u4_t hal_ticks () {
-  uint64_t val;
-  timer_get_counter_value(TIMER_GROUP_0, TIMER_1, &val);
-  return (u4_t)val;
+  uint64_t us = (uint64_t)esp_timer_get_time();
+  return (u4_t)((us * OSTICKS_PER_SEC) / 1000000ULL);
 }
 
 // Returns the number of ticks until time. Negative values indicate that
@@ -191,8 +178,6 @@ static s4_t delta_time(u4_t time) {
 
 
 void hal_waitUntil (u4_t time) {
-
-    ESP_LOGI(TAG, "Wait until");
     s4_t delta = delta_time(time);
 
     while( delta > 2000){
@@ -201,7 +186,6 @@ void hal_waitUntil (u4_t time) {
     } if(delta > 0){
         vTaskDelay(delta / portTICK_PERIOD_MS);
     }
-    ESP_LOGI(TAG, "Done waiting until");
 }
 
 // check and rewind for target time

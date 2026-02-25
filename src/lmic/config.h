@@ -30,12 +30,33 @@
 #define OSTICKS_PER_SEC 50000
 
 // SPI interface used by LMIC
+// ESP-IDF naming note:
+// - ESP-IDF 5.x typically uses HSPI_HOST / VSPI_HOST
+// - ESP-IDF 6.x uses SPI2_HOST / SPI3_HOST
+// Keep both mappings so the same LMIC code works across IDF versions.
 #ifdef CONFIG_LMIC_SPI_HSPI
+#if defined(HSPI_HOST)
 #define LMIC_SPI HSPI_HOST
+#elif defined(SPI2_HOST)
+#define LMIC_SPI SPI2_HOST
+#endif
 #endif
 
 #ifdef CONFIG_LMIC_SPI_VSPI
+#if defined(VSPI_HOST)
 #define LMIC_SPI VSPI_HOST
+#elif defined(SPI3_HOST)
+#define LMIC_SPI SPI3_HOST
+#endif
+#endif
+
+#ifndef LMIC_SPI
+// Default to SPI2_HOST when available (IDF 6), otherwise HSPI_HOST (IDF 5).
+#if defined(SPI2_HOST)
+#define LMIC_SPI SPI2_HOST
+#elif defined(HSPI_HOST)
+#define LMIC_SPI HSPI_HOST
+#endif
 #endif
 
 // Set this to 1 to enable some basic debug output (using printf) about
