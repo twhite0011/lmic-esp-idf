@@ -134,7 +134,7 @@ static void hal_spi_init () {
         .queue_size = 7,
     };
 
-    ret = spi_bus_initialize(LMIC_SPI, &buscfg, 1);
+    ret = spi_bus_initialize(LMIC_SPI, &buscfg, SPI_DMA_CH_AUTO);
     assert(ret == ESP_OK);
 
     ret = spi_bus_add_device(LMIC_SPI, &devcfg, &spi_handle);
